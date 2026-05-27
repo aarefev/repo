@@ -163,6 +163,79 @@ struct CopySyntaxTree : Transformer {
     }
 };
 
+struct FoldConstants : Transformer {
+    Expression* transformNumber(Number const* number) {
+        return new Number(number->value()); // число уже является константой, просто создаём его копию
+    }
+
+    Expression* transformBinaryOperation(BinaryOperation const* binop) {
+        Expression* newLeft = binop->left()->transform(this); // сворачиваем левое поддерево
+        Expression* newRight = binop->right()->transform(this); // сворачиваем правое поддерево
+
+        Number* leftNumber = dynamic_cast<Number*>(newLeft); // проверяем стали ли оба операнда числами
+        Number* rightNumber = dynamic_cast<Number*>(newRight);
+
+        if (leftNumber && rightNumber) {
+            double left = leftNumber->value(); // если оба операнда - числа, операцию можно вычислить
+            double right = rightNumber->value();
+            double result = 0.0;
+
+            switch (binop->operation()) {
+            case BinaryOperation::PLUS:
+                result = left + right;
+                break;
+
+            case BinaryOperation::MINUS:
+                result = left - right;
+                break;
+
+            case BinaryOperation::DIV:
+                result = left / right;
+                break;
+
+            case BinaryOperation::MUL:
+                result = left * right;
+                break;
+            }
+
+            delete newLeft;
+            delete newRight;
+
+            return new Number(result);
+        }
+
+        return new BinaryOperation(newLeft, binop->operation(), newRight);
+    }
+
+    Expression* transformFunctionCall(FunctionCall const* fcall) {
+        Expression* newArg = fcall->arg()->transform(this); // сворачиваем аргумент функции
+
+        Number* argNumber = dynamic_cast<Number*>(newArg); // проверяем является ли аргумент числом
+
+        if (argNumber) {
+            double arg = argNumber->value(); // если аргумент - число, функцию можно вычислить
+            double result = 0.0;
+
+            if (fcall->name() == "sqrt") {
+                result = std::sqrt(arg);
+            }
+            else {
+                result = std::fabs(arg);
+            }
+
+            delete newArg;
+
+            return new Number(result);
+        }
+
+        return new FunctionCall(fcall->name(), newArg);
+    }
+
+    Expression* transformVariable(Variable const* var) {
+        return new Variable(var->name()); // копируем переменную, так как значение неизвестно
+    }
+};
+
 int main() {
     Number* n32 = new Number(32.0);
     Number* n16 = new Number(16.0);
@@ -175,10 +248,8 @@ int main() {
     BinaryOperation* mult = new BinaryOperation(var, BinaryOperation::MUL,callSqrt);
     FunctionCall* callAbs = new FunctionCall("abs", mult);
 
-    CopySyntaxTree CST;
-    Expression* newExpr = callAbs->transform(&CST);
+    FoldConstants FC;
+    Expression* newExpr = callAbs->transform(&FC);
 
-    std::cout << callAbs->evaluate() << std::endl; //  0
     std::cout << newExpr->evaluate(); //  0
-
 }
